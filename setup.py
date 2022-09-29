@@ -31,7 +31,7 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[required_packages],
-    extras_require={"dev":  dev_packages},
+    extras_require={"dev": dev_packages},
     dependency_links=[],
     entry_points={
         "console_scripts": [
