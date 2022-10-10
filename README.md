@@ -6,4 +6,6 @@ by Hongnan Gao
 
 <h4 align="center">
   <a href="https://gao-hongnan.github.io/gaohn-mlops-docs/mlops_docs/developing/general_workflow/#styling-and-formatting">Styling and Formatting</a>
+  •
+  <a href="https://madewithml.com/courses/mlops/styling/">Made With ML's Styling and Formatting</a>
 </h4>
