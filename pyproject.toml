@@ -13,7 +13,7 @@ exclude = '''
     | buck-out
     | build
     | dist
-    | venv_*
+    | \.venv_*/
   )/
 '''
 
