@@ -4,4 +4,4 @@ by Hongnan Gao
 <br>
 </div>
 
-This repository implements YOLOv1 in PyTorch.
+[Setup](https://gao-hongnan.github.io/gaohn-mlops-docs/mlops_docs/developing/general_workflow/#packaging-and-setup)
