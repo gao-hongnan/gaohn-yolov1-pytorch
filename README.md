@@ -4,4 +4,6 @@ by Hongnan Gao
 <br>
 </div>
 
-[Setup](https://gao-hongnan.github.io/gaohn-mlops-docs/mlops_docs/developing/general_workflow/#packaging-and-setup)
+<h4 align="center">
+  <a href="https://gao-hongnan.github.io/gaohn-mlops-docs/mlops_docs/developing/general_workflow/#packaging-and-setup">Packaging and Setup</a>
+</h4>
