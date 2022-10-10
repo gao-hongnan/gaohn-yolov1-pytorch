@@ -5,5 +5,7 @@ by Hongnan Gao
 </div>
 
 <h4 align="center">
-  <a href="https://gao-hongnan.github.io/gaohn-mlops-docs/mlops_docs/developing/general_workflow/#styling-and-formatting">Styling and Formatting</a>
+  <a href="https://gao-hongnan.github.io/gaohn-mlops-docs/mlops_docs/developing/general_workflow/#scripting">Scripting</a>
+  •
+  <a href="https://madewithml.com/courses/mlops/makefile/">Made With ML's Makefile</a>
 </h4>
