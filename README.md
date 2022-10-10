@@ -4,4 +4,6 @@ by Hongnan Gao
 <br>
 </div>
 
-This repository implements YOLOv1 in PyTorch.
+<h4 align="center">
+  <a href="https://gao-hongnan.github.io/gaohn-mlops-docs/mlops_docs/developing/general_workflow/#styling-and-formatting">Styling and Formatting</a>
+</h4>
