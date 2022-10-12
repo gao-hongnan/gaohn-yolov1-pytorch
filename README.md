@@ -11,3 +11,10 @@ by Hongnan Gao
   <span> • </span>
   <a href="https://madewithml.com/courses/mlops/documentation/">Made With ML</a>
 </h4>
+
+Add `hydra-core==1.2.0` to `requirements.txt`.
+
+```bash
+$ pip install hydra-core==1.2.0
+$ mkdir configs
+```
