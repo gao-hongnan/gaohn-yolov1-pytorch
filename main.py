@@ -20,7 +20,7 @@ def train(cfg: DictConfig) -> None:
     # logger.info(cfg.optimizer)
 
     # https://hydra.cc/docs/advanced/instantiate_objects/overview/
-    model = hydra.utils.instantiate(cfg.optimizer)
+    model = hydra.utils.instantiate(cfg.models)
     print(model)
 
 

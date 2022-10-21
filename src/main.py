@@ -10,9 +10,9 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, OmegaConf
 import hydra.utils as hu
 
-# from loss import YoloLoss, YOLOv1Loss, YOLOv1Loss2D
+from loss import YOLOv1Loss2D
 from configs import config
-from loss_debug import YOLOv1Loss2D
+
 
 DEBUG = True
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # "mps" # if macos m1
@@ -25,17 +25,6 @@ NUM_WORKERS = 0
 seed_all(seed=1992)
 
 ModelConfig = config.ModelConfig()
-
-# cs = ConfigStore.instance()
-# cs.store(name="config", node=config.ModelConfig)
-# # cs.store(name="config", node=ClassMap)
-
-
-# @hydra.main(version_base=None, config_path="../config", config_name="config")
-# def run(cfg: config.ModelConfig):
-#     print(OmegaConf.to_yaml(cfg))
-#     print(cfg.architecture)
-#     main(cfg)
 
 
 def main(debug: bool = True):

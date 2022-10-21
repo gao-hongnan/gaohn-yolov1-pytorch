@@ -1,5 +1,9 @@
 from dataclasses import asdict, dataclass, field
 from typing import List, Dict
+import hydra
+from hydra.core.config_store import ConfigStore
+from omegaconf import MISSING, OmegaConf, DictConfig
+import hydra.utils as hu
 
 
 @dataclass(frozen=False, init=True)
@@ -80,3 +84,21 @@ class ClassMap:
 
     def __post_init__(self):
         self.classes_map = {v: k for v, k in enumerate(self.classes)}
+
+
+# convert dataclasses to hydra
+
+
+cs = ConfigStore.instance()
+# cs.store(name="configs", node=config.ModelConfig)
+cs.store(name="configs", node=ClassMap)
+
+
+@hydra.main(version_base=None, config_path=".", config_name="config")
+def run(cfg: DictConfig):
+    print(type(cfg))
+    print(OmegaConf.to_yaml(cfg))
+
+
+if __name__ == "__main__":
+    run()

@@ -20,7 +20,7 @@ import numpy as np
 from configs import config
 from torch.utils.data import DataLoader
 from model import Yolov1Darknet
-from loss import YoloLoss, YOLOv1Loss
+from loss import YOLOv1Loss2D
 
 ClassMap = config.ClassMap()
 
@@ -31,7 +31,7 @@ def train_one_epoch(
     train_loader: DataLoader,
     model: Yolov1Darknet,
     optimizer: torch.optim,
-    criterion: YoloLoss,
+    criterion: YOLOv1Loss2D,
     epoch: int,
     device: str,
 ) -> List[float]:
