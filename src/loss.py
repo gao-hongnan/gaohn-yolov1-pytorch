@@ -57,7 +57,7 @@ class YOLOv1Loss2D(nn.Module):
     ) -> torch.Tensor:
         """Computes the loss for the x and y offset of the bounding box."""
         x_offset_loss = self.mse(x_i, xhat_i)
-        print("offsetxy",x_offset_loss)
+        #print("offsetxy",x_offset_loss)
         y_offset_loss = self.mse(y_i, yhat_i)
         xy_offset_loss = x_offset_loss + y_offset_loss
         return xy_offset_loss
@@ -161,15 +161,19 @@ class YOLOv1Loss2D(nn.Module):
                         xhat_i_jmax, yhat_i_jmax, what_i_jmax, hhat_i_jmax, confhat_i_jmax = xhat_i2, yhat_i2, what_i2, hhat_i2, confhat_i2
                         confhat_i_complement = confhat_i1
                         
+
                     if batch_index == 0 and i == 30:
                         print(batch_index, i)
+                        print(f"y_true_i: {y_true_i}")
+                        print(f"y_pred_i: {y_pred_i}")
                         print(f"x_i: {x_i}, y_i: {y_i}, w_i: {w_i}, h_i: {h_i}")
                         print(f"xhat_jmax: {xhat_i_jmax}, yhat_jmax: {yhat_i_jmax}, what_jmax: {what_i_jmax}, hhat_jmax: {hhat_i_jmax}, confhat_jmax: {confhat_i_jmax}")
+                        
                         print(f"self.bbox_xy_offset_loss: {self.lambda_coord * self.compute_xy_offset_loss(x_i, xhat_i_jmax, y_i, yhat_i_jmax)}")
-                        # print(f"self.bbox_wh_loss: {self.bbox_wh_loss}")
-                        # print(f"self.object_conf_loss: {self.object_conf_loss}")
+                        print(f"self.bbox_wh_loss: {self.lambda_coord * self.compute_wh_loss(w_i, what_i_jmax, h_i, hhat_i_jmax)}")
+                        print(f"self.object_conf_loss: {self.compute_object_conf_loss(conf_i, confhat_i_jmax)}")
                         # print(f"self.no_object_conf_loss: {self.no_object_conf_loss}")
-                        # print(f"self.class_loss: {self.class_loss}")
+                        print(f"self.class_loss: {self.compute_class_loss(p_i, phat_i)}")
                     
                     self.bbox_xy_offset_loss += self.lambda_coord * self.compute_xy_offset_loss(x_i, xhat_i_jmax, y_i, yhat_i_jmax)                 # equation 1
                     self.bbox_wh_loss += self.lambda_coord * self.compute_wh_loss(w_i, what_i_jmax, h_i, hhat_i_jmax)                               # equation 2
@@ -185,8 +189,8 @@ class YOLOv1Loss2D(nn.Module):
                 else:
                     for j in range(self.B):
                         self.no_object_conf_loss += self.lambda_noobj * self.compute_no_object_conf_loss(conf_i=y_true_i[4], confhat_i=y_pred_i[4 + j * 5]) # equation 4
+                    
 
-                
         total_loss = (
             self.bbox_xy_offset_loss
             + self.bbox_wh_loss
