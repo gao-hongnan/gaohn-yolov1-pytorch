@@ -21,6 +21,11 @@ $$
 \newcommand{\1}{\mathbb{1}}
 \newcommand{\Pobj}{\mathbb{P}(\text{obj})}
 \newcommand{\yhat}{\symbf{\hat{y}}}
+\newcommand{\xhat}{\symbf{\hat{x}}}
+\newcommand{\x}{\symbf{x}}
+\newcommand{\y}{\symbf{y}}
+\newcommand{\w}{\symbf{w}}
+\newcommand{\h}{\symbf{h}}
 \newcommand{\bs}{\textbf{bs}}
 \newcommand{\byolo}{\mathrm{b}_{\text{yolo}}}
 \newcommand{\bgrid}{\mathrm{b}_{\text{grid}}}
@@ -53,6 +58,7 @@ $$
 \newcommand{\obji}{\mathbb{1}_{i}^{\text{obj}}}
 \newcommand{\nobji}{\mathbb{1}_{i}^{\text{noobj}}}
 \DeclareMathOperator*{\argmax}{arg\,max}
+\newcommand{\abs}{\text{abs}}
 $$ 
 
 # YOLOv1
@@ -1018,8 +1024,9 @@ first batch of the train loader, as illustrated in {numref}`first_batch`.
 
 ```{code-cell} ipython3
 # load directly the first batch of the train loader
-y_trues = torch.load("./assets/y_trues.pt")
-y_preds = torch.load("./assets/y_preds.pt")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+y_trues = torch.load("./assets/y_trues.pt", map_location=device)
+y_preds = torch.load("./assets/y_preds.pt", map_location=device)
 print(f"y_trues.shape: {y_trues.shape}")
 print(f"y_preds.shape: {y_preds.shape}")
 ```
@@ -1216,15 +1223,15 @@ $$
             p_i(c) - \hat{p}_i(c)
         \right)^2}
 \end{align}
-$$
+$$ (eq:original-yolo-loss)
 
 Before we dive into what each equation means, we first establish the notations that we will be using:
 
 We define the loss function to be $\L$, a function of $\y$ and $\yhat$ respectively. 
-Both $\y$ and $\yhat$ are both of shape $\R^{49 \times 30}$, the **outer summation** $\sum_{i = 0}^{S^2}$
+Both $\y$ and $\yhat$ are of shape $\R^{49 \times 30}$, the **outer summation** $\sum_{i = 0}^{S^2}$
 tells us that we are actually computing
 the loss over each grid cell $i$ and summing them (49 rows) up afterwards, which constitute
-to our total loss $\L(\y, \yhat)$. We will skip the meaning behind the summation $\sum_{i = 0}^{B}$ for now.
+to our total loss $\L(\y, \yhat)$. We will skip the meaning behind the summation $\sum_{j = 0}^{B}$ for now.
 
 The {numref}`yolov1-loss_1` depicts how the loss function is summed over a single image over all the grid cells.
 
@@ -1263,7 +1270,7 @@ $$ (eq:yolov1-total-loss-over-batches)
 
 ### Loss for a Single Grid Cell in a Single Image
 
-The simplication in the previous sections is to allow us to better appreciate what each equation in the loss
+The simplications in the previous sections allow us to better appreciate what each equation in the loss
 function mean.
 
 We will also make some very rigid assumptions:
@@ -1291,8 +1298,8 @@ has an object where in fact there is no object.
 
 #### The Formula
 
-Equation {eq}`eq:yolov1-total-loss` is the loss function for a single image.
-Consequently, we define $\L_i(\y_i, \yhat_i)$ to be the loss of each grid cell $i$
+In the previous section, equation {eq}`eq:yolov1-total-loss` is the loss function for a single image.
+We now define $\L_i(\y_i, \yhat_i)$, the loss of each grid cell $i$
 
 $$
     \begin{align}
@@ -1344,7 +1351,7 @@ when compared to the ground truth. **More on this later as there can be a few in
 #### Example with Numbers Part I
 
 To be honest, I never understood the above equations without the help of numbers. So let us look at some numbers.
-Let's zoom in on how to calculate loss for one grid cell $i$. And as continuity, we will use the
+Let's zoom in on how to calculate loss for one grid cell $i$. And for continuity, we will use the
 $i=30$ grid cell as an example, the one which the dog is located in.
 
 We will use back the dataframe row which represent the grid cell $i=30$, for both
@@ -1406,7 +1413,7 @@ $$
 Then we define the new loss function $\L_i$ for each grid cell $i$ as follows:
 
 ```{prf:definition} $\L_i$ Modified!
-:label: def_loss_i
+:label: def_loss_i_modified
 
 The modified loss function $\L_i$ for each grid cell $i$ is defined as follows:
 
@@ -1418,7 +1425,8 @@ $$
                           & \overset{(d)}{+} \color{green}{\lambda_\textbf{noobj} \cdot \nobji \lpar \conf_i - \confhat_i^{\jmax} \rpar^2}                                                                  \\
                           & \overset{(e)}{+}  \color{red}{\obji \sum_{c \in \cc} \lpar \p_i(c) - \phat_i(c) \rpar^2}                                                                                               \\
   \end{align}
-$$
+$$ (eq:yolov1-loss-for-single-grid-cell-modified)
+
 
 thereby collapsing the equation to checking only two conditions:
 
@@ -1432,84 +1440,114 @@ with each of the $B=2$ bounding box predictors $\bhat_i^j$ ($j=1,2$) in the grid
 bounding box predictor $\bhat_i^j$ with the highest IOU score and denote the index to be $\jmax$.
 ```
 
-#### Examples with Numbers Part II
+#### Recap on the Modified Loss Function
+
+Before we dive into numbers, let's first recap the loss function for a single grid cell $i$.
+
+Let's briefly go through this term by term, bearing in mind that we are talking about 1 single grid cell and not the whole image.
+
+- The first part of the equation in {eq}`eq:original-yolo-loss` computes the loss between the predicted bounding box $\xx-\yy$
+  offsets $(\xxhat_i, \yyhat_i)$ and the ground-truth bounding box $\xx-\yy$ offsets $(\xx_i, \yy_i)$. 
+
+    - However, we are referring to the **original yolo loss** function here, which sums up the total loss for a single image. 
+  In code however, we want to first compute the loss for each grid cell in a single image, and then sum up the losses for all grid cells in the image.
+
+    - Therefore, we will use the our {prf:ref}`def_loss_i_modified`, a modified version to find the loss for each grid cell in a single image.
+
+    - In the modified version, we see that the first part of the equation {eq}`eq:yolov1-loss-for-single-grid-cell-modified`
+  computes the loss between the ground truth bounding box $\xx-\yy$ offsets $(\xx_i, \yy_i)$ 
+  and the matched predicted bounding box $\xx-\yy$ offsets $(\xxhat_i^{\jmax}, \yyhat_i^{\jmax})$.
+
+    - Remember carefully that the model predicts **two** bounding boxes for each grid cell, 
+      and we need to match the ground truth bounding box with the predicted bounding box that has the highest IoU
+      with the ground truth bounding box.
+
+    - We multiply the loss by a constant $\lambda_\text{coord}=5$ to ensure that this equation does not get drowned out by
+    the fact that most grid cells do not contain an object. In our example, out of 49 grid cells, only 2 grid cells contains ground truth objects.
+
+    - **Most importantly, this equation only gets computed for grid cells that contain a ground truth object, 
+    as indicated by $\obji$**.
 
 
+- The second part of the equation in {eq}`eq:original-yolo-loss` computes the loss between the predicted bounding box $\ww-\hh$
+  dimensions $(\wwhat_i, \hhhat_i)$ and the ground-truth bounding box $\ww-\hh$ dimensions $(\ww_i, \hh_i)$. 
+
+    - Again, we are referring to the **original yolo loss** function here, which sums up the total loss for a single image. 
+  In code however, we want to first compute the loss for each grid cell in a single image, and then sum up the losses for all grid cells in the image.
+
+    - Therefore, we will use the our {prf:ref}`def_loss_i_modified`, a modified version to find the loss for each grid cell in a single image.
+
+    - In the modified version, we see that the second part of the equation {eq}`eq:yolov1-loss-for-single-grid-cell-modified`
+  computes the loss between the ground truth bounding box $\ww-\hh$ dimensions $(\ww_i, \hh_i)$ 
+  and the matched predicted bounding box $\ww-\hh$ dimensions $(\wwhat_i^{\jmax}, \hhhat_i^{\jmax})$.
+
+    - There is a catch, however. We are actually computing the loss between the square root of the ground truth bounding box $\ww-\hh$ dimensions $\sqrt{\ww_i}, \sqrt{\hh_i}$
+    and the square root of the matched predicted bounding box $\ww-\hh$ dimensions $\sqrt{\wwhat_i^{\jmax}}, \sqrt{\hhhat_i^{\jmax}}$.
+    The reason can be found in my **Intuition: Parametrization of Bounding Box**.
+
+    - Remember carefully that the model predicts **two** bounding boxes for each grid cell, 
+      and we need to match the ground truth bounding box with the predicted bounding box that has the highest IoU
+      with the ground truth bounding box.
+
+    - We multiply the loss by a constant $\lambda_\text{coord}=5$ to ensure that this equation does not get drowned out by
+    the fact that most grid cells do not contain an object. In our example, out of 49 grid cells, only 2 grid cells contains ground truth objects.
+
+    - **Most importantly, this equation only gets computed for grid cells that contain a ground truth object, 
+    as indicated by $\obji$**.
 
 
+- The third part of the equation in {eq}`eq:original-yolo-loss` computes the loss between the predicted object confidence $\confhat_i$
+  and the ground-truth object confidence $\conf_i$.
+
+    - We see that the third part of the equation {eq}`eq:yolov1-loss-for-single-grid-cell-modified` computes the loss between the ground truth object confidence $\conf_i$ 
+  and the matched predicted object confidence $\confhat_i^{\jmax}$.
+
+    - Remember carefully that the model predicts **two** object confidences for each grid cell, 
+      and we need to match the ground truth object confidence with the predicted object confidence that has the highest IoU
+      with the ground truth bounding box.
+
+    - Recall that the ground truth $\conf_i$ is defined as 1 if the grid cell contains an object, and 0 otherwise initially,
+    but during loss computation, $\conf_i$ is defined to be the IoU between the ground truth bounding box and the predicted bounding box that has the highest IoU,
+    as seen in {prf:ref}`gt-confidence`. But for our code, we will just use `conf_i = 1` or `conf_i = 0` for simplicity.
+
+    - **Most importantly, this equation only gets computed for grid cells that contain a ground truth object, 
+    as indicated by $\obji$**.
 
 
+- The fourth part of the equation in {eq}`eq:original-yolo-loss` computes the loss between the predicted object confidence $\confhat_i$
+  and the ground-truth object confidence $\conf_i$ when the ***grid cell does not contain an object***.
+
+    - Even though in our fourth part of the equation {eq}`eq:yolov1-loss-for-single-grid-cell-modified`,
+    we put a $\jmax$ subscript, but in code we actually compute the loss for all predicted bounding boxes in the grid cell.
+    This is logical as well because if the grid cell does not contain an object, then the predicted bounding boxes
+    should both have a low object confidence and be penalized to tell the model that the grid cell does not contain an object.
+
+    - We multiply the loss by a constant $\lambda_\text{noobj}=0.5$ to ensure that this equation does not get drowned out by
+    the fact that most grid cells do not contain an object. 
+    We do not want this term to overpower the gradients for the cells containing objects
+    as this could lead to model instability and be harder to optimize {cite}`redmon_divvala_girshick_farhadi_2016`.
 
 
-Let's briefly go through this term by term:
+- The fifth part of the equation in {eq}`eq:original-yolo-loss` computes the loss between the predicted class probabilities $\phat_i$
+    and the ground-truth class probabilities $\p_i$.
+    
+    - We see that the fifth part of the equation {eq}`eq:yolov1-loss-for-single-grid-cell-modified` computes the loss between the ground truth class probabilities $\p_i$ 
+    and the matched predicted class probabilities $\phat_i$.
 
-- The first part of the equation computes the loss between the predicted bounding box x-y offsets $(\xhat_i, \yhat_i)$ 
-  and the ground-truth bounding box x-y offsets $(\x_i, \y_i)$.
+    - Note that $\p_i$ and $\phat_i$ are both vectors of length $C$, where $C$ is the number of classes. They are not scalars unlike the previous equations.
 
-  It is calculated for all the 49 grid cells, and only one of the two bounding boxes is considered in the loss. Remember, it only penalizes bounding box coordinate error for the predictor that is “responsible” for the ground-truth box (i.e., has the highest IOU of any predictor in that grid cell).
+    - Note that we do not have $\jmax$ here because both predicted bounding boxes share the same class probabilities.
 
-  In short, we will see out of the two bounding boxes which have the highest IOU with the target bounding box, and that will get prioritized for the loss computation.
-
-  Finally, we weigh the loss with a constant \lambda_\text{coord}=5 to ensure that our bounding box predictions are as close as possible to the target. Lastly, an identity function 1^\text{obj}_{ij} denotes that the jth bounding box predictor in cell i is responsible for that prediction. Thus, it will be 1 if the target object exists and 0 otherwise.
-
-
-#### Matching
+    - **Most importantly, this equation only gets computed for grid cells that contain a ground truth object, 
+    as indicated by $\obji$. This is why the author call them ***conditional probabilities***, 
+    $\mathcal{P} \left( \p_i \mid \obji = 1 \right)$**. It is only computed conditionally on the fact that the grid cell contains an object.
+  
+In summary:
 
 After the forward pass, the model will have encoded the ground truth $\b_30$ and
 the two predicted bounding boxes $\bhat_i^1$ and $\bhat_i^2$. Our first step is to 
 determine which of the two predicted bounding boxes is the best match for the ground truth,
 the filtering process is done by the IOU metric.
-
-```{code-cell} ipython3
-:tags: [output_scroll, remove-input]
-def intersection_over_union(bbox_1, bbox_2, bbox_format = "yolo") -> torch.Tensor:
-    """Calculates intersection over union between two bounding boxes.
-
-    References:
-        Code modified from https://github.com/aladdinpersson/Machine-Learning-Collection
-    """
-    assert bbox_format in ["yolo", "voc", "albu"]
-
-    if isinstance(bbox_1, np.ndarray):
-        bbox_1 = torch.from_numpy(bbox_1)
-
-    if isinstance(bbox_2, np.ndarray):
-        bbox_2 = torch.from_numpy(bbox_2)
-
-    if bbox_format == "yolo":
-        bbox_1 = yolo2albu(bbox_1)
-        bbox_2 = yolo2albu(bbox_2)
-
-    # at this stage bbox must be in either albu or voc format.
-    box1_x1 = bbox_1[..., 0:1]
-    box1_y1 = bbox_1[..., 1:2]
-    box1_x2 = bbox_1[..., 2:3]
-    box1_y2 = bbox_1[..., 3:4]
-    box2_x1 = bbox_2[..., 0:1]
-    box2_y1 = bbox_2[..., 1:2]
-    box2_x2 = bbox_2[..., 2:3]
-    box2_y2 = bbox_2[..., 3:4]
-
-    x1 = torch.max(box1_x1, box2_x1)
-    y1 = torch.max(box1_y1, box2_y1)
-    x2 = torch.min(box1_x2, box2_x2)
-    y2 = torch.min(box1_y2, box2_y2)
-
-    # .clamp(0) is for the case when they do not intersect
-    intersection = (x2 - x1).clamp(0) * (y2 - y1).clamp(0)
-
-    box1_area = abs((box1_x2 - box1_x1) * (box1_y2 - box1_y1))
-    box2_area = abs((box2_x2 - box2_x1) * (box2_y2 - box2_y1))
-
-    iou = intersection / (box1_area + box2_area - intersection + 1e-6)
-    # https://pytorch.org/docs/stable/generated/torch.Tensor.item.html
-    # squeeze all dimensions to scalar
-    iou = iou.item()
-
-    return iou
-```
-
-
 
 
 Assuming that the matching is done, for the predicted boxes that are matched to ground truth boxes 
@@ -1520,167 +1558,346 @@ For all predicted boxes that are not matched with a ground truth box,
 it is minimising the objectness confidence, but ignoring the box coordinates 
 and class probabilities {cite}`turner_2021`.
 
-In both the dataframes, each row corresponds to a grid cell, $\y_i$ and $\yhat_i$ respectively.
+#### Examples with Numbers Part II
+
+```{code-cell} ipython3
+:tags: [hide-input]
+
+"""
+Implementation of Yolo Loss Function from the original yolo paper
+"""
+import torch
+from torch import nn
+# from utils import intersection_over_union, bmatrix
+import numpy as np
+import pandas as pd
+
+# reshape to [49, 30] from [7, 7, 30]
+class YOLOv1Loss2D(nn.Module):
+    def __init__(
+        self,
+        S: int,
+        B: int,
+        C: int,
+        lambda_coord: float = 5,
+        lambda_noobj: float = 0.5,
+    ) -> None:
+        super().__init__()
+        self.S = S
+        self.B = B
+        self.C = C
+        self.lambda_coord = lambda_coord
+        self.lambda_noobj = lambda_noobj
+        # mse = (y_pred - y_true)^2
+        # FIXME: still unclean cause by right reduction is not sum since we are
+        # adding scalars, but class_loss uses vector sum reduction so need to use for all?
+        self.mse = nn.MSELoss(reduction="none")
+        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    def _initiate_loss(self) -> None:
+        """Initializes all the loss values to 0.
+        
+        Note:
+            This is an important step if not the current batch loss will be added to the
+            next batch loss which causes error in `loss.backward()`.
+        """
+        # bbox loss
+        self.bbox_xy_offset_loss = 0
+        self.bbox_wh_loss = 0
+
+        # objectness loss
+        self.object_conf_loss = 0
+        self.no_object_conf_loss = 0
+
+        # class loss
+        self.class_loss = 0
+
+    def compute_xy_offset_loss(
+        self,
+        x_i: torch.Tensor,
+        xhat_i: torch.Tensor,
+        y_i: torch.Tensor,
+        yhat_i: torch.Tensor,
+    ) -> torch.Tensor:
+        """Computes the loss for the x and y offset of the bounding box."""
+        x_offset_loss = self.mse(x_i, xhat_i)
+        y_offset_loss = self.mse(y_i, yhat_i)
+        xy_offset_loss = x_offset_loss + y_offset_loss
+        return xy_offset_loss
+
+    def compute_wh_loss(
+        self,
+        w_i: torch.Tensor,
+        what_i: torch.Tensor,
+        h_i: torch.Tensor,
+        hhat_i: torch.Tensor,
+        epsilon: float = 1e-6,
+    ) -> torch.Tensor:
+        """Computes the loss for the width and height of the bounding box.
+        
+        Note:
+            The width and height are predicted as the square root of the width and height
+            and absolute values are applied to the predictions as they are unbounded
+            below and can be numerically unstable.
+        """
+        w_loss = self.mse(torch.sqrt(w_i), torch.sqrt(torch.abs(what_i + epsilon)))
+        h_loss = self.mse(torch.sqrt(h_i), torch.sqrt(torch.abs(hhat_i + epsilon)))
+        wh_loss = w_loss + h_loss
+        return wh_loss
+
+    def compute_object_conf_loss(
+        self, conf_i: torch.Tensor, confhat_i: torch.Tensor
+    ) -> torch.Tensor:
+        """Computes the loss for the object confidence when there is really an object."""
+        return self.mse(conf_i, confhat_i)
+
+    def compute_no_object_conf_loss(
+        self, conf_i: torch.Tensor, confhat_i: torch.Tensor
+    ) -> torch.Tensor:
+        """Computes the loss for the object confidence when there is no object."""
+        return self.mse(conf_i, confhat_i)
+
+    def compute_class_loss(self, p_i: torch.Tensor, phat_i: torch.Tensor) -> torch.Tensor:
+        """Computes the loss for the class prediction.
+
+        Note:
+            Instead of looping C number of classes, we can use self.mse(p_i, phat_i)
+            as the vectorized version.
+        """
+        total_class_loss = 0
+        for c in range(self.C):
+            total_class_loss += self.mse(p_i[c], phat_i[c])
+        return total_class_loss
+
+    # fmt: off
+    def forward(self, y_trues: torch.Tensor, y_preds: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the loss function.
+
+        Args:
+            y_trues (torch.Tensor): The ground truth tensor of shape (bs, S, S, 5B + C).
+            y_preds (torch.Tensor): The predicted tensor of shape (bs, S, S, 5B + C).
+
+        Returns:
+            total_loss_averaged_over_batch (torch.Tensor): The total loss averaged over the batch.
+        """
+        self._initiate_loss()                                                                       # reset loss values
+        
+        y_trues = y_trues.reshape(-1, self.S * self.S, self.C + self.B * 5)                         # (4, 49, 30)
+        y_preds = y_preds.reshape(-1, self.S * self.S, self.C + self.B * 5)                         # (4, 49, 30)
+
+        batch_size = y_preds.shape[0]                                                               # 4
+
+        for batch_index in range(batch_size):                                                       # for each image in batch 
+            y_true = y_trues[batch_index]                                                           # y:    (49, 30)
+            y_pred = y_preds[batch_index]                                                           # yhat: (49, 30)
+
+            for i in range(self.S * self.S):                                                        # i is the grid cell index [0, 48] 
+                y_true_i = y_true[i]                                                                # y_i:    (30,) or (1, 30)
+                y_pred_i = y_pred[i]                                                                # yhat_i: (30,) or (1, 30)
+                
+                indicator_obj_i = y_true_i[4] == 1                                                  # this is $\obji$ and checking y_true[i, 4] is sufficient since y_true[i, 9] is repeated
+
+                if indicator_obj_i:                                                                 # here equation (a), (b), (c) and (e) of the loss equation on a single grid cell.
+                    b = y_true_i[0:4]                                                               # b:    (4,) or (1, 4)
+                    bhat_1 = y_pred_i[0:4]                                                          # bhat1: (4,) or (1, 4)
+                    bhat_2 = y_pred_i[5:9]                                                          # bhat2: (4,) or (1, 4)
+                    
+                    x_i, y_i, w_i, h_i = b                                                          # x_i, y_i, w_i, h_i: (1,)
+                    # at this stage jmax is not known yet.
+                    xhat_i1, yhat_i1, what_i1, hhat_i1 = bhat_1                                     # xhat_i1, yhat_i1, what_i1, hhat_i1: (1,)
+                    xhat_i2, yhat_i2, what_i2, hhat_i2 = bhat_2                                     # xhat_i2, yhat_i2, what_i2, hhat_i2: (1,)
+                    
+                    conf_i, confhat_i1, confhat_i2 = y_true_i[4], y_pred_i[4], y_pred_i[9]          # conf_i, confhat_i1, confhat_i2: (1,)
+                    
+                    p_i, phat_i = y_true_i[10:], y_pred_i[10:]                                      # p_i, phat_i: (20,) or (1, 20)
+
+                    # area of overlap
+                    iou_b1 = intersection_over_union(b, bhat_1, bbox_format="yolo")                 # iou of b and bhat1
+                    iou_b2 = intersection_over_union(b, bhat_2, bbox_format="yolo")                 # iou of b and bhat2
+
+                    if iou_b1 > iou_b2:
+                        # conf_i = max_{bhat \in {bhat_1, bhat_2}} IoU(b, bhat)
+                        # however I set conf_i = y_true_i[4] = 1 here as it gives better results for our case
+                        xhat_i_jmax, yhat_i_jmax, what_i_jmax, hhat_i_jmax, confhat_i_jmax = xhat_i1, yhat_i1, what_i1, hhat_i1, confhat_i1
+                        confhat_i_complement = confhat_i2
+                    else:
+                        xhat_i_jmax, yhat_i_jmax, what_i_jmax, hhat_i_jmax, confhat_i_jmax = xhat_i2, yhat_i2, what_i2, hhat_i2, confhat_i2
+                        confhat_i_complement = confhat_i1
+                        
+                    
+                    self.bbox_xy_offset_loss += self.lambda_coord * self.compute_xy_offset_loss(x_i, xhat_i_jmax, y_i, yhat_i_jmax)                 # equation 1
+                    self.bbox_wh_loss += self.lambda_coord * self.compute_wh_loss(w_i, what_i_jmax, h_i, hhat_i_jmax)                               # equation 2
+                    self.object_conf_loss += self.compute_object_conf_loss(conf_i, confhat_i_jmax)                                                  # equation 3
+
+                    # mention 2 other ways
+                    # iou比较小的bbox不负责预测物体，因此confidence loss算在noobj中，注意，对于标签的置信度应该是iou2
+                    # we can set conf_i = iou_b2 as well as the smaller of the two should be optimized to say there exist no object instead of proposing something.
+                    # we can set conf_i = 0 as well and it will work.
+                    # TODO: comment for blog if uncomment it performs a bit better early.
+                    # self.no_object_conf_loss += self.lambda_noobj * self.compute_no_object_conf_loss(conf_i=torch.tensor(0., device="cuda"), confhat_i=confhat_i_complement)
+                    self.class_loss += self.compute_class_loss(p_i, phat_i)                                                                               # equation 5
+                else:
+                    for j in range(self.B):
+                        self.no_object_conf_loss += self.lambda_noobj * self.compute_no_object_conf_loss(conf_i=y_true_i[4], confhat_i=y_pred_i[4 + j * 5]) # equation 4
+
+        total_loss = (
+            self.bbox_xy_offset_loss
+            + self.bbox_wh_loss
+            + self.object_conf_loss
+            + self.no_object_conf_loss
+            + self.class_loss
+        )
+
+        # if dataloader has a batch size of 2, then our total loss is the average of the two losses.
+        # i.e. total_loss = (loss1 + loss2) / 2 where loss1 is the loss for the first image in the
+        # batch and loss2 is the loss for the second image in the batch.
+        total_loss_averaged_over_batch = total_loss / batch_size
+        # print(f"total_loss_averaged_over_batch {total_loss_averaged_over_batch}")
+
+        return total_loss_averaged_over_batch
+```
 
 
-### Walkthrough
+```{code-cell} ipython3
+:tags: [output_scroll, remove-input]
 
-$$
-\begin{bmatrix}
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0.5694051 & 0.56999993 & 0.97450423 & 0.972 & 1. & 0.5694051 & 0.56999993 & 0.97450423 & 0.972 & 1. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 1. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0.4093485 & 0.27699995 & 0.4164306 & 0.262 & 1. & 0.4093485 & 0.27699995 & 0.4164306 & 0.262 & 1. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 1. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-  0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0. & 0.\\
-\end{bmatrix}
-$$
+display(y_true_df.iloc[30].to_frame().transpose())
+```
 
-$$
-\begin{bmatrix}
-  9.25e-01 & -1.67e-01 & 1.91e-01 & 7.23e-01 & 2.14e-01 & 1.00e+00 & 1.23e-01 & 5.77e-02 & 5.62e-01 & -1.19e-01 & -5.86e-01 & -2.33e-02 & -1.02e-01 & -1.60e-01 & -4.08e-01 & 5.64e-01 & -1.63e-01 & 2.94e-01 & -2.06e-01 & -6.84e-01 & -2.15e-01 & 3.40e-01 & 4.25e-01 & 1.39e-01 & -4.16e-01 & -2.33e-01 & 2.82e-01 & 5.17e-01 & 3.94e-01 & 6.71e-02\\
-  3.33e-01 & 1.90e-01 & -8.38e-02 & 4.28e-01 & -2.90e-01 & -1.90e-01 & 3.59e-01 & 3.56e-02 & -1.30e-01 & -6.84e-01 & 4.15e-01 & -7.22e-02 & -1.82e-01 & 3.25e-01 & 3.38e-02 & -9.65e-02 & -2.58e-01 & -1.80e-01 & -4.89e-01 & -1.92e-01 & 4.00e-02 & 5.50e-01 & 4.92e-01 & 2.79e-01 & -1.57e-01 & -3.29e-01 & -1.06e-01 & 2.01e-01 & -3.94e-01 & -5.36e-01\\
-  -3.57e-01 & 4.45e-01 & 6.91e-01 & -3.01e-01 & -3.70e-01 & 4.30e-01 & 2.38e-01 & 4.56e-01 & -4.86e-03 & 1.13e-01 & 2.45e-01 & 2.47e-01 & 6.85e-03 & -3.48e-01 & 3.01e-01 & -7.47e-01 & -5.57e-02 & -1.94e-01 & 1.24e-01 & -4.37e-01 & 1.72e-01 & 2.39e-01 & -4.26e-01 & 2.08e-01 & 2.55e-01 & 3.35e-01 & -1.52e-01 & -5.26e-01 & -5.71e-01 & 7.32e-01\\
-  1.20e-01 & -1.61e-02 & 7.32e-01 & -2.33e-01 & -4.15e-02 & 4.28e-01 & -4.82e-01 & 1.58e-01 & -2.46e-01 & 7.98e-03 & 7.01e-03 & -1.34e-01 & -6.39e-01 & -5.28e-01 & -5.45e-01 & -6.89e-01 & 1.13e-03 & 3.71e-02 & 3.06e-01 & -7.26e-02 & 4.91e-01 & -1.05e+00 & -5.16e-01 & -1.13e-02 & 
--2.37e-01 & 4.80e-01 & -8.23e-01 & 4.18e-01 & -2.84e-01 & 1.66e-01\\
-  -5.30e-01 & -3.81e-01 & 8.08e-02 & -2.41e-01 & -3.75e-03 & 1.44e-01 & 9.89e-01 & -1.77e-01 & 2.47e-01 & 2.54e-01 & 8.17e-02 & 2.34e-02 & -1.02e-01 & 1.13e-02 & 2.17e-01 & 4.97e-01 & 2.24e-01 & 2.41e-01 & -1.25e-01 & 1.43e-01 & 3.18e-01 & 5.69e-02 & -1.11e-03 & -2.78e-01 & -1.00e-01 & -2.23e-02 & -3.20e-01 & -1.21e-02 & -4.73e-01 & -2.14e-01\\
-  -3.67e-01 & 2.17e-01 & 1.63e-01 & 4.74e-01 & 3.85e-02 & 8.19e-01 & 9.11e-01 & -3.28e-01 & -4.70e-02 & -1.69e-01 & 2.76e-01 & 3.70e-01 & -2.23e-01 & 4.52e-01 & -1.17e-01 & -1.01e-01 & 5.21e-01 & 5.43e-01 & 1.28e-01 & 3.47e-01 & -2.42e-01 & -2.80e-01 & -4.14e-01 & -2.96e-01 & 6.62e-01 & -1.57e-02 & -4.29e-01 & 5.55e-03 & -3.30e-02 & 1.92e-01\\
-  5.57e-02 & -2.61e-01 & -4.05e-02 & -1.09e-01 & -4.40e-01 & 3.29e-01 & 1.78e-01 & -1.14e-01 & 4.38e-01 & -1.39e-01 & -3.94e-01 & 2.67e-01 & 3.91e-01 & -5.33e-01 & 1.46e-01 & 3.57e-01 & 2.39e-01 & -1.65e-01 & -3.99e-01 & 1.38e-01 & 3.57e-01 & 3.68e-01 & -3.90e-01 & -6.30e-02 & 5.36e-01 & 3.88e-01 & 4.94e-01 & -7.19e-01 & 5.54e-01 & -6.84e-01\\
-  -3.23e-01 & -1.15e-01 & -1.55e-01 & -1.72e-02 & -5.97e-02 & -3.24e-01 & 1.63e-01 & 9.84e-02 & 3.68e-01 & -2.94e-01 & 1.95e-01 & 2.13e-01 & -6.06e-01 & 5.30e-01 & 5.27e-01 & 6.23e-01 & -5.19e-01 & -1.68e-01 & 6.22e-03 & -9.78e-02 & 5.50e-01 & -6.58e-01 & 9.16e-02 & -2.50e-01 & 2.83e-01 & -2.99e-01 & 2.85e-02 & 3.08e-01 & 1.08e-01 & -3.88e-01\\
-  5.85e-02 & -6.09e-02 & 2.19e-01 & -2.63e-01 & -1.41e-01 & -4.13e-01 & 1.22e+00 & 3.28e-01 & -6.35e-01 & 5.26e-02 & 2.12e-02 & 1.07e-01 & -3.58e-01 & -1.60e-01 & -7.41e-02 & 2.15e-01 & 6.47e-02 & 3.47e-01 & -3.94e-01 & 2.25e-01 & -5.62e-02 & 2.99e-01 & 2.51e-01 & -4.11e-02 & 2.50e-01 & 5.26e-01 & -4.88e-02 & -1.05e-01 & -4.70e-02 & 4.49e-01\\
-  -2.03e-01 & 4.43e-02 & -2.60e-01 & -1.05e-01 & -1.99e-01 & 5.13e-01 & 6.73e-01 & -8.13e-02 & -4.36e-01 & 9.82e-02 & -6.53e-02 & 4.43e-01 & 2.28e-01 & -3.77e-01 & -3.92e-01 & 6.21e-02 & 1.30e-01 & -4.44e-01 & -1.84e-01 & -4.44e-01 & 3.90e-01 & -7.02e-02 & 1.67e-01 & -2.47e-01 & 
-5.37e-01 & 2.62e-01 & 4.60e-01 & -1.12e-01 & 3.32e-01 & 2.23e-02\\
-  2.38e-01 & 4.11e-01 & -2.64e-01 & -6.30e-02 & -3.45e-01 & -4.68e-01 & -3.79e-01 & -3.82e-01 & 6.56e-02 & -1.87e-02 & 3.30e-01 & -1.31e-02 & -4.36e-01 & 6.77e-01 & -6.43e-02 & -5.39e-01 & 5.22e-01 & 2.36e-01 & -4.58e-01 & 3.15e-01 & 7.15e-01 & -6.03e-01 & -6.56e-01 & 2.43e-01 & 
--4.38e-01 & 3.60e-01 & -1.20e-01 & -1.99e-01 & 6.68e-01 & -3.79e-01\\
-  8.77e-02 & 1.48e-02 & -3.90e-02 & 8.91e-02 & 8.81e-04 & 4.73e-02 & 1.80e-01 & 1.51e-02 & 5.51e-01 & -5.89e-01 & 3.66e-01 & 7.79e-01 & 6.58e-02 & 2.14e-03 & -2.46e-01 & -1.87e-01 & -1.01e-01 & -6.43e-02 & -6.09e-02 & -1.85e-01 & 8.33e-01 & -8.58e-02 & 1.48e-01 & -8.72e-01 & -2.77e-02 & -3.32e-01 & 6.29e-01 & -3.34e-01 & 7.44e-02 & -2.61e-01\\
-  -6.96e-01 & 4.06e-01 & 1.31e-01 & 4.42e-01 & 2.47e-01 & 3.46e-01 & 2.12e-01 & 5.11e-01 & 2.61e-01 & -2.68e-01 & 8.43e-01 & 5.09e-01 & 3.69e-01 & 1.57e-01 & 6.78e-01 & 6.22e-02 & 3.38e-01 & 2.33e-01 & 4.28e-02 & -4.84e-01 & 7.41e-01 & 8.94e-01 & 2.48e-01 & -8.71e-02 & 4.59e-01 & 1.72e-02 & 3.16e-01 & 2.55e-01 & -1.89e-02 & 8.70e-02\\
-  -9.29e-01 & 2.55e-01 & 3.58e-01 & 4.56e-01 & 2.61e-01 & 1.14e-01 & -7.44e-01 & 3.80e-02 & -4.97e-02 & -8.95e-02 & -7.87e-02 & 8.46e-01 & -1.52e-02 & -1.95e-01 & -5.42e-01 & -7.93e-01 & 9.05e-02 & 3.40e-01 & 4.54e-01 & -1.59e-01 & -2.06e-01 & -4.05e-01 & -8.69e-01 & 2.09e-01 & -4.64e-01 & -4.76e-01 & -4.98e-01 & 7.74e-02 & 1.25e-01 & 7.94e-01\\
-  -2.56e-01 & -5.06e-01 & 1.34e-01 & -3.52e-01 & 1.51e-01 & -1.56e-01 & 4.59e-01 & 3.42e-03 & 3.96e-01 & 4.48e-02 & 5.63e-01 & -1.41e-01 & 4.18e-01 & -1.67e-01 & 2.70e-01 & -2.38e-01 & 4.16e-01 & 1.60e-01 & 1.44e-01 & 1.70e-01 & -2.39e-02 & -2.85e-01 & 3.68e-01 & 6.08e-01 & 6.26e-01 & 4.44e-01 & 3.12e-01 & -1.95e-01 & 3.12e-01 & -1.77e-01\\
-  6.27e-01 & -2.40e-01 & -3.48e-01 & -2.89e-01 & -1.77e-01 & 4.07e-01 & 7.71e-01 & 8.90e-01 & 7.73e-01 & 2.66e-01 & 2.77e-01 & -2.84e-03 & 3.92e-01 & 2.96e-01 & -7.04e-01 & -7.29e-02 & 4.64e-01 & -3.75e-01 & -1.23e-01 & 3.35e-01 & 8.18e-01 & 1.08e-01 & 3.00e-01 & 4.25e-02 & 2.47e-01 & -4.22e-02 & 1.03e-01 & 6.32e-02 & -4.33e-01 & -1.43e-02\\
-  -1.28e-01 & 1.67e-02 & -4.86e-01 & -1.98e-01 & 1.44e-01 & 8.93e-02 & -3.36e-01 & 9.12e-02 & 7.35e-01 & 2.57e-01 & -1.66e-01 & 1.79e-01 & -1.43e-01 & -1.46e-01 & -1.47e-01 & -1.81e-01 & 7.83e-01 & -2.71e-01 & -2.75e-01 & -4.07e-01 & -3.66e-01 & -6.67e-01 & -3.26e-01 & 1.14e-01 & 1.01e-01 & -1.64e-01 & -1.08e+00 & 6.94e-01 & 2.54e-01 & 3.40e-01\\
-  -1.56e-01 & -4.08e-01 & -2.23e-01 & -9.35e-02 & 1.40e-01 & 8.29e-01 & 1.38e+00 & -2.80e-01 & -1.21e+00 & 3.40e-01 & -2.36e-01 & -4.58e-01 & -1.65e-01 & 6.90e-01 & 4.32e-01 & -3.00e-01 & 1.04e-01 & 3.11e-01 & -3.02e-01 & 1.12e-01 & 1.82e-01 & -2.67e-01 & -3.87e-01 & -1.37e-01 & 
-4.76e-01 & -3.97e-02 & -7.04e-02 & 2.32e-01 & -2.08e-01 & 2.06e-01\\
-  -2.08e-01 & -6.29e-01 & 1.39e-01 & -1.78e-01 & 1.55e-01 & 1.04e-01 & -1.23e-02 & -4.80e-01 & -2.59e-01 & -9.66e-03 & -1.17e-01 & 1.14e-01 & -5.67e-02 & -3.48e-01 & -9.73e-02 & 3.29e-01 & 1.22e-01 & 5.57e-03 & -4.31e-02 & 9.05e-02 & -1.65e-01 & 3.89e-02 & -5.23e-01 & 3.17e-01 & 
-6.08e-02 & 3.49e-01 & -6.30e-01 & 3.97e-01 & 8.65e-02 & 2.25e-02\\
-  5.16e-01 & -3.15e-01 & 3.57e-01 & 1.73e-01 & -1.14e-01 & -2.42e-01 & -5.76e-02 & -1.78e-01 & -7.81e-02 & -2.09e-01 & -4.03e-01 & 5.90e-01 & -1.89e-01 & -2.62e-01 & 2.42e-01 & -5.95e-03 & -9.70e-03 & -3.19e-01 & 1.80e-01 & -2.60e-01 & -2.95e-01 & 1.96e-01 & -7.49e-01 & 9.50e-02 
-& -1.91e-01 & -6.89e-01 & 1.30e-01 & -5.94e-02 & 6.21e-01 & 8.76e-02\\
-  7.45e-02 & 4.42e-01 & -1.16e-01 & -6.98e-01 & 6.59e-02 & 1.81e-01 & 4.16e-01 & 3.63e-02 & 1.98e-01 & -6.84e-02 & -3.70e-01 & -9.90e-02 & -2.46e-01 & -5.26e-01 & 4.10e-01 & 1.60e-01 & 3.08e-01 & -3.90e-01 & 2.31e-01 & -5.02e-01 & 1.02e-02 & -2.39e-01 & -9.00e-02 & -2.88e-01 & -1.93e-01 & -3.38e-01 & 6.02e-01 & -2.27e-01 & 1.14e+00 & 5.18e-01\\
-  6.25e-01 & -3.84e-03 & -4.61e-01 & -3.28e-01 & -1.16e-01 & 3.63e-01 & 9.07e-02 & 8.26e-01 & -3.77e-01 & 2.65e-01 & -1.44e-01 & 2.83e-01 & -2.74e-01 & 6.19e-01 & 5.21e-01 & 3.52e-01 & -1.83e-01 & 4.18e-01 & -2.34e-02 & -5.13e-02 & -3.56e-01 & -1.73e-01 & 3.14e-01 & 1.20e-01 & -3.19e-01 & -1.06e-01 & 7.07e-02 & -3.32e-01 & 5.54e-01 & 6.50e-01\\
-  -1.01e-01 & -3.86e-01 & 3.27e-01 & 2.11e-01 & 5.43e-01 & 9.87e-01 & 6.66e-01 & 8.07e-01 & -5.60e-01 & -2.60e-01 & -2.05e-01 & 5.48e-03 & 3.39e-01 & -4.47e-01 & 1.04e-01 & -2.63e-01 & -6.93e-01 & 7.47e-01 & 6.84e-01 & -2.77e-01 & 2.42e-02 & -3.88e-01 & 6.72e-02 & -4.45e-01 & 4.72e-01 & 1.82e-01 & -5.03e-01 & 2.62e-01 & -2.86e-01 & 1.96e-01\\
-  -3.18e-01 & -3.09e-01 & 2.80e-01 & -4.85e-01 & -2.03e-02 & 5.75e-01 & 7.36e-01 & -5.28e-01 & 3.78e-01 & 8.03e-01 & 2.40e-01 & -3.58e-01 & -2.81e-01 & 1.06e-01 & 3.86e-01 & 6.97e-02 & -3.79e-01 & 5.06e-01 & 4.28e-02 & -2.66e-01 & 2.47e-01 & 2.02e-01 & -3.10e-01 & 5.93e-01 & 4.43e-01 & 5.41e-02 & 1.48e-01 & -5.71e-02 & -4.77e-02 & -1.65e-01\\
-  3.09e-02 & 6.74e-01 & 3.09e-01 & 4.22e-01 & 1.78e-01 & 2.28e+00 & 8.14e-01 & 6.22e+00 & 5.79e+00 & 1.96e+00 & 3.73e-02 & -2.50e-02 & 1.83e-01 & -2.14e-01 & -3.33e-01 & 2.07e-01 & 2.74e-01 & 1.12e-01 & -2.62e-01 & -2.21e-01 & 2.00e-01 & -1.23e-01 & 4.32e-01 & -1.65e-01 & 6.30e-01 & -5.33e-02 & 1.05e-01 & -5.64e-02 & 1.31e-01 & 5.15e-01\\
-  1.12e-01 & 5.49e-02 & 7.04e-01 & -5.05e-01 & -3.83e-01 & -6.66e-01 & 2.11e-02 & 1.07e+00 & -1.51e+00 & 3.01e-01 & 1.08e-01 & -2.15e-01 & -4.04e-01 & 3.26e-02 & -1.45e-01 & -3.39e-01 & 2.10e-01 & -3.16e-01 & 2.93e-02 & 1.30e-01 & 4.83e-01 & -5.33e-01 & -4.50e-01 & 2.64e-01 & -3.84e-03 & 6.61e-02 & 5.40e-03 & 1.96e-01 & 9.46e-02 & -1.15e-01\\
-  8.37e-02 & 7.58e-01 & 3.04e-01 & 3.82e-01 & 1.69e-02 & 6.62e-01 & 2.58e-01 & 4.95e+00 & -8.76e-01 & -1.06e-01 & -5.23e-01 & -2.20e-01 & -1.09e-01 & -4.29e-02 & -1.26e-02 & -2.74e-01 & 1.66e-01 & -9.05e-02 & 4.30e-01 & -6.20e-02 & 7.92e-02 & 5.01e-01 & -5.37e-03 & 5.10e-02 & 7.38e-01 & -2.53e-01 & 1.99e-02 & 5.13e-01 & 1.88e-02 & -4.76e-02\\
-  9.80e-03 & -3.09e-01 & 2.00e-02 & -5.40e-01 & -3.04e-01 & 5.17e-02 & -8.23e-02 & -1.02e-01 & -1.08e+00 & 3.05e-01 & 5.08e-01 & 4.36e-01 & 1.33e-01 & -7.35e-01 & 4.16e-01 & 3.87e-01 & 3.50e-01 & 7.52e-01 & 3.75e-01 & 2.13e-01 & 1.59e-01 & 5.28e-01 & -1.77e-01 & 1.34e-01 & 2.17e-01 & 3.16e-01 & 5.96e-01 & -6.29e-01 & -1.89e-01 & 3.65e-02\\
-  -2.90e-01 & -1.15e+00 & 1.14e-01 & 1.38e-01 & 4.58e-01 & -3.34e-01 & -8.01e-02 & -1.71e-01 & 3.39e-01 & -5.67e-02 & 1.13e-01 & -8.59e-01 & -1.85e-01 & 3.62e-01 & 3.34e-01 & 5.29e-01 & 8.08e-02 & 1.37e-01 & -3.83e-02 & 6.51e-02 & -6.25e-02 & -2.36e-01 & 1.35e-01 & -1.99e-01 & -1.66e-01 & -4.40e-01 & 5.36e-01 & 2.91e-01 & -1.58e-01 & 3.59e-01\\
-  -2.32e-01 & -1.38e-01 & -2.29e-01 & 5.84e-01 & -4.02e-02 & 7.44e-01 & 1.17e-01 & 7.39e-01 & -5.79e-01 & 8.78e-02 & 4.95e-02 & -5.74e-02 & 8.12e-02 & 3.11e-01 & -8.32e-02 & 4.68e-01 & 5.75e-01 & 1.07e-01 & -3.45e-01 & -3.60e-01 & -1.05e+00 & 2.40e-01 & 5.73e-01 & 2.96e-01 & 6.61e-02 & -1.24e-01 & -7.89e-01 & -5.19e-02 & -2.13e-01 & 2.72e-01\\
-  -4.83e-01 & -3.51e-01 & -5.95e-01 & 1.83e-02 & 1.62e-01 & 2.69e+00 & 2.00e+00 & -1.17e+00 & -4.59e+00 & 7.58e-01 & -2.32e-01 & 5.27e-01 & -2.56e-01 & -2.83e-01 & 3.82e-01 & -1.66e-01 & -7.12e-02 & -1.75e-01 & 1.47e-01 & 1.66e-02 & -4.15e-01 & 1.16e+00 & -4.29e-02 & -9.52e-02 & 
-1.32e-01 & -1.06e-01 & 2.69e-01 & 9.23e-02 & -8.45e-02 & 5.84e-01\\
-  -4.29e-02 & -2.28e-01 & 5.28e-03 & 2.94e-01 & 1.48e-02 & 5.28e-01 & 1.31e+00 & -1.33e+00 & -5.99e-01 & 6.79e-01 & -3.70e-01 & 3.13e-01 & -2.04e-01 & -2.98e-02 & 6.84e-02 & 3.74e-01 & 1.16e-01 & -4.55e-02 & 2.69e-01 & 2.17e-02 & -1.11e-01 & 3.08e-01 & -2.93e-01 & 9.52e-02 & 1.69e-01 & 3.91e-01 & -2.77e-01 & 1.97e-01 & -5.55e-02 & 1.20e-01\\
-  3.80e-01 & -9.89e-02 & -1.17e-01 & 6.35e-01 & 1.41e-02 & 1.20e+00 & 7.37e-01 & 1.06e+00 & -2.84e-01 & 2.41e-01 & -2.61e-01 & 3.17e-01 & 1.12e-01 & -1.17e-02 & 4.74e-01 & -2.74e-01 & -1.70e-01 & 4.16e-02 & 1.86e-01 & -4.30e-02 & 2.19e-01 & -2.78e-01 & 1.71e-01 & 2.26e-01 & 1.66e-01 & -1.49e-02 & 1.60e-01 & 4.98e-02 & 9.14e-01 & -1.87e-01\\
-  -7.37e-02 & -1.86e-01 & -8.15e-01 & 1.30e-02 & -1.38e-01 & -4.46e-01 & -4.13e-02 & -2.60e-01 & 3.65e-01 & 6.63e-02 & -8.08e-02 & 4.02e-02 & -3.23e-01 & -2.52e-01 & 2.16e-01 & 4.42e-01 & -4.03e-01 & 1.47e-01 & 8.12e-01 & -1.69e-01 & -2.96e-01 & -6.52e-01 & -3.51e-01 & -1.73e-01 
-& 2.57e-01 & -9.40e-02 & -4.60e-01 & -5.87e-01 & 6.92e-02 & 2.91e-01\\
-  -2.64e-01 & 1.57e-01 & -1.41e-01 & -2.98e-01 & 1.59e-01 & 1.73e-01 & 2.92e-01 & 1.96e-01 & 1.71e-01 & 1.25e-01 & 3.35e-01 & 3.10e-01 & -9.56e-02 & -2.56e-01 & -5.47e-01 & 5.63e-01 & -3.79e-01 & 3.68e-01 & 5.63e-01 & -2.11e-01 & 1.19e-01 & 7.37e-01 & 3.46e-02 & -6.11e-01 & -4.18e-01 & -2.89e-01 & -3.58e-01 & -2.82e-01 & -3.28e-02 & -1.80e-01\\
-  2.27e-02 & 5.60e-01 & 4.47e-02 & 1.04e-01 & 4.95e-02 & -8.95e-02 & -5.82e-02 & 5.48e-01 & -3.86e-01 & -2.31e-02 & 2.42e-01 & -6.30e-02 & -5.87e-01 & 2.14e-01 & 6.69e-02 & -2.79e-02 & 1.05e+00 & 8.56e-02 & 4.01e-01 & 4.06e-01 & -3.60e-02 & 2.18e-01 & -1.33e-01 & 1.10e-01 & 7.85e-01 & 2.77e-01 & -2.26e-01 & 5.08e-02 & 2.01e-01 & 2.19e-02\\
-  -3.77e-02 & -6.89e-02 & 2.23e-01 & 3.78e-01 & -1.72e-01 & -2.31e-01 & -2.47e-01 & 5.07e-01 & 4.26e-01 & 2.16e-01 & 3.25e-01 & 2.73e-01 & 4.96e-02 & -4.31e-01 & -2.80e-01 & -2.27e-01 & 2.77e-02 & -4.57e-01 & -2.97e-01 & 2.01e-01 & 7.69e-02 & 2.85e-01 & -1.41e-01 & -4.38e-01 & -2.40e-01 & 7.84e-02 & 1.37e-01 & -2.26e-01 & 1.51e-01 & 1.91e-01\\
-  -2.56e-01 & -3.22e-01 & -6.39e-02 & -5.69e-01 & 3.16e-01 & 1.09e+00 & 6.00e-01 & -1.57e-01 & -4.19e-01 & 4.71e-01 & -1.33e-01 & -3.61e-01 & 1.15e-01 & -1.33e-01 & 2.11e-01 & 2.20e-01 & 5.78e-02 & -3.07e-01 & 9.59e-01 & 5.86e-01 & -1.57e-01 & 7.29e-02 & -8.66e-01 & -5.54e-02 & 4.60e-01 & 5.59e-01 & 2.72e-01 & -1.89e-01 & 3.44e-01 & 9.72e-02\\
-  -1.61e-01 & -2.75e-01 & -1.08e-01 & 3.97e-01 & 7.07e-02 & 2.64e-01 & 4.07e-01 & 2.35e+00 & 6.81e-01 & 4.41e-01 & 5.12e-01 & 1.70e-01 & -1.61e-01 & -6.80e-01 & -1.33e-01 & 1.15e-01 & 2.58e-01 & -3.91e-01 & 5.25e-03 & 3.27e-01 & -1.49e-01 & -2.83e-02 & -1.96e-01 & -3.57e-01 & 1.36e-01 & -4.08e-01 & 5.14e-02 & -4.30e-02 & 2.80e-01 & -1.03e-01\\
-  2.33e-01 & -3.94e-01 & -6.62e-02 & -2.21e-02 & -4.80e-02 & 1.30e+00 & 3.67e-01 & -1.01e+00 & -1.28e+00 & 1.88e-01 & 1.69e-01 & 2.79e-01 & 3.87e-01 & 1.17e-01 & 6.14e-02 & -2.04e-01 & 1.98e-01 & 6.00e-01 & 5.84e-01 & 3.95e-01 & 1.14e-01 & 7.07e-01 & -4.92e-01 & -1.70e-01 & -4.06e-01 & -3.53e-01 & 6.10e-02 & 2.58e-01 & 7.26e-01 & 3.71e-01\\
-  6.70e-02 & -1.62e-02 & -2.81e-01 & 4.87e-02 & -2.21e-01 & 9.00e-01 & 6.42e-02 & 4.47e-01 & 2.88e-01 & 3.25e-01 & -3.16e-01 & -3.13e-01 & 1.65e-01 & -3.79e-01 & 2.36e-01 & -1.18e-01 & 7.68e-01 & -2.57e-03 & 3.95e-01 & 1.39e-01 & -1.33e-01 & 2.94e-01 & -2.52e-01 & 7.44e-01 & 3.78e-01 & 5.29e-01 & 1.10e-01 & -2.71e-01 & 2.68e-01 & -6.39e-01\\
-  -2.58e-01 & -1.32e-01 & -1.31e-01 & 5.67e-01 & -2.10e-02 & -1.02e-01 & -3.03e-01 & 4.84e-01 & 2.87e-01 & 1.03e-01 & 1.32e-02 & 5.86e-01 & -3.84e-01 & -5.18e-01 & -4.77e-02 & -1.15e-01 & 3.91e-01 & 3.18e-01 & 1.68e-01 & -3.54e-01 & -1.36e-01 & -5.01e-01 & 1.66e-01 & -2.09e-01 & 
--2.68e-01 & 3.78e-01 & -7.81e-01 & -2.12e-01 & 3.71e-01 & 4.54e-01\\
-  -1.57e-01 & -1.36e-01 & 5.43e-01 & 1.75e-02 & 1.42e-01 & -4.82e-01 & 2.25e-01 & -9.01e-01 & -1.72e-01 & 1.34e-01 & 2.17e-01 & 4.89e-01 & -2.64e-01 & 1.68e-01 & 5.73e-01 & -8.13e-01 & 3.01e-01 & 6.60e-01 & 3.08e-01 & -3.28e-02 & -1.67e-01 & -1.80e-01 & -3.82e-01 & -1.09e-01 & 3.81e-01 & 2.44e-01 & -3.38e-01 & 5.56e-01 & 1.16e-01 & -8.41e-01\\
-  1.58e-01 & 1.03e-01 & 3.70e-01 & 2.46e-02 & -1.05e-01 & -2.26e-01 & 1.04e-01 & 2.95e-02 & 2.74e-01 & -1.10e-01 & -5.24e-01 & 3.16e-01 & 2.02e-01 & -1.59e-01 & 1.71e-02 & 2.41e-01 & 2.23e-01 & 8.65e-02 & -1.15e-01 & 5.23e-02 & 9.11e-01 & 3.42e-01 & 1.66e-01 & 2.88e-01 & 2.32e-01 & -4.50e-01 & 6.82e-02 & -9.58e-01 & 7.40e-01 & -2.03e-01\\
-  1.81e-01 & -2.18e-03 & -4.51e-02 & 2.12e-01 & -1.94e-01 & 4.86e-01 & -1.13e-01 & -4.38e-01 & -1.40e-01 & -1.73e-01 & 2.77e-01 & -4.17e-01 & -4.47e-02 & -3.93e-01 & -3.07e-01 & 5.63e-01 & -3.99e-01 & 1.84e-01 & 3.73e-01 & 5.09e-01 & -2.24e-01 & -3.48e-01 & -2.01e-01 & -6.23e-01 
-& -2.53e-02 & -4.63e-01 & 4.55e-01 & 4.21e-01 & 6.28e-01 & 1.74e-01\\
-  -1.80e-01 & 1.26e-01 & 3.13e-01 & 1.86e-01 & -6.77e-02 & -8.86e-03 & 7.74e-01 & -5.56e-01 & 2.96e-01 & 2.69e-01 & 2.71e-01 & -6.89e-02 & -5.54e-01 & 3.18e-02 & 3.02e-02 & 9.49e-02 & 2.60e-02 & -4.48e-01 & -1.14e-01 & 3.97e-01 & 2.65e-01 & 1.09e+00 & -1.51e-02 & 2.11e-01 & 1.55e-01 & -4.49e-01 & -2.53e-02 & -2.47e-02 & 3.31e-01 & -4.60e-01\\
-  5.80e-02 & -2.94e-01 & -3.81e-01 & 6.12e-01 & -5.01e-01 & 2.08e-02 & -6.30e-01 & 2.95e-01 & 2.12e-01 & -2.30e-01 & -3.72e-01 & -6.87e-01 & 6.47e-01 & 1.18e-01 & 4.34e-01 & 7.32e-01 & -9.67e-02 & -1.59e-01 & -3.40e-01 & -2.29e-01 & -8.15e-02 & 4.07e-01 & -1.73e-01 & 6.60e-01 & 8.83e-01 & -4.92e-01 & -1.42e-01 & -1.62e-01 & 6.72e-01 & -2.97e-01\\
-  -1.54e-01 & 3.57e-01 & -1.21e-01 & 5.42e-02 & -5.69e-01 & 2.50e-01 & 5.41e-01 & 5.46e-01 & 1.67e-01 & 1.00e-02 & 3.74e-01 & 1.29e-01 & -4.48e-01 & 2.88e-01 & -1.73e-01 & 3.32e-01 & -2.43e-01 & -6.57e-01 & 4.27e-01 & -3.28e-01 & -3.69e-01 & -6.90e-02 & -2.03e-01 & 3.57e-02 & -5.55e-01 & 1.20e-01 & 6.69e-01 & -1.72e-01 & 2.95e-01 & 1.89e-02\\
-  6.20e-01 & 4.95e-01 & -3.67e-01 & -2.08e-01 & 1.66e-01 & 7.65e-02 & -3.16e-02 & -7.81e-02 & -6.56e-02 & 1.06e-01 & -6.84e-01 & 2.23e-02 & 1.61e-01 & 1.51e-01 & 5.47e-01 & 1.10e+00 & 3.96e-02 & 9.58e-02 & 2.65e-02 & -4.44e-01 & -5.71e-01 & 3.88e-01 & 3.12e-02 & 3.23e-02 & -9.58e-02 & 5.94e-01 & -4.39e-01 & 3.60e-02 & 1.78e-01 & -1.53e-01\\
-\end{bmatrix}
-$$
+```{code-cell} ipython3
+:tags: [output_scroll, remove-input]
+
+display(y_pred_df.iloc[30].to_frame().transpose())
+```
 
 1st image in the batch has objects in row 24 and 30 (human, dog at 3,3 and 2,4)
 
-- loop over batch
-    - `y_true` is the ground truth matrix of shape `(49, 30)`;
-    - `y_pred` is the predicted matrix of shape `(49, 30)`;
-    - loop over grid cells from 0 to 48
-    - loop 0 `i=0`:
-        - `y_true_i` is the ground truth matrix of shape `(1, 30)` for the cell `i=0`;
-        - Notice that we know in advance that in this grid cell $0$ there is no ground truth object
-          and hence `y_true_i` is an all zero vector, by {prf:ref}`yolo_gt_matrix`.
+- `line x-x`:
+    - `y_trues` consists of $4$ ground truth bounding boxes of shape `(4, 49, 30)`.
+    - `y_preds` consists of $4$ predicted bounding boxes of shape `(4, 49, 30)`.
+    - These two variables are zipped into batches of $N$ for deep learning computation but we will 
+    only focus on the first image of the batch.
 
-        - `y_pred_i` is the predicted matrix of shape `(1, 30)` for the cell `i=0`;
-        
-        - `indicator_obj_i` corresponds to $\obji$ in the equation above and is
-          equal to $0$ since there is no object in cell $i=0$. 
-        
-        - We do not explicitly define `indicator_noobj_i` to correspond to $\nobji$
-          but it is equal to $1$ since there is no object in cell $i=0$. This means
-          that it will not go through the `if` clause in `line ??` and will go through
-          `else` clause in `line ??` and will compute the loss for the no object equation
-          at $d$ equation above.
+- `line x`:
+    - `batch_size` is the number of images in the batch, in this case $N = 4$.
 
-        - **No object loss**: `line xx-xx` means we are looping over the 2 bounding boxes in cell $i=0$.
-            - Loop over $j=0$
-                - `y_true[i, 4]` is the confidence score of the 1st bounding box in cell $i=0$.
-                - It is equal to $0$ since there is no object in cell $i=0$ by {prf:ref}`gt-confidence`.
-                - `y_pred[i, 4]` is the confidence score of the 1st bounding box in cell $i=0$.
-                - We will compute the mean squared error between the ground truth confidence
-                score and the predicted confidence score of the 1st predicted bounding box.
-            - Loop over $j=1$
-                - We still use `y_true[i, 4]` because the `y_true[i, 9]` is same as `y_true[i, 4]` by
-                  construction in {prf:ref}`yolo_gt_matrix`.  
-                - `y_pred[i, 9]` is the confidence score of the 2nd bounding box in cell $i=0$.
-                - We will compute the mean squared error between the ground truth confidence score and
-                  the predicted confidence score of the 2nd predicted bounding box.
-            - Finally, these two errors are summed up to be `self.no_object_conf_loss`. We will put the 
-              $\lambda_\textbf{noobj}$ in front of this loss in the `line ??` of the code later.
+- `line x` says `for batch_index in range(batch_size):` will loop over the first image in the batch.
+    - when `batch_index=0`:
+        - `y_true` is the ground truth matrix of shape `(49, 30)`;
+        - `y_pred` is the predicted matrix of shape `(49, 30)`;
+        - loop over grid cells from `0` to `48`:
+            - when `i=0`:
+                - `y_true_i` is the ground truth matrix of shape `(1, 30)` for the cell `i=0`;
+                - `y_true_i = [0, 0, 0, ..., 0]` a zero vector because there is no ground truth object in the cell `i=0`
+                by {prf:ref}`yolo_gt_matrix`.
+                - `y_pred_i` is the predicted matrix of shape `(1, 30)` for the cell `i=0`;
+  
+                    ```
+                    [ 0.9248, -0.1671,  0.1906,  0.7233,  0.2136,  1.0013,  0.1228,  0.0577, 0.5615, -0.1186,
+                    -0.5857, -0.0233, -0.1024, -0.1603, -0.4082,  0.5643, -0.1626,  0.2941, -0.2064, -0.6844,
+                    -0.2154,  0.3397,  0.4247,  0.1387, -0.4165, -0.2329,  0.2822,  0.5175,  0.3936,  0.0671]
+                    ```
 
+                - `indicator_obj_i` corresponds to $\obji$ in the equation above and is
+                equal to $0$ when there is no object in cell $i=0$. In this grid cell `i=0`, 
+                this will be equal to `0`.
+
+                - `line x` says `if indicator_obj_i == 1:` will be `False` because there is no object in cell `i=0`.
+
+                We do not explicitly define `indicator_noobj_i` to correspond to $\nobji$
+                but it is equal to $1$ since there is no object in cell $i=0$. This means
+                that it will not go through the `if` clause in `line ??` and will go through
+                `else` clause in `line ??` and will compute the loss for the no object equation
+                at $d$ equation above.
+
+                - So we will skip over all lines in the `if` clause and go to `else` clause.
+
+                - **No object loss**: `line xx-xx` means we are looping over the 2 bounding boxes in cell $i=0$.
+                    - Loop over $j=0$
+                        - `y_true[i, 4]` is the confidence score of the 1st bounding box in cell $i=0$.
+                        - It is equal to $0$ since there is no object in cell $i=0$ by {prf:ref}`gt-confidence`.
+                        - `y_pred[i, 4]` is the confidence score of the 1st bounding box in cell $i=0$.
+                        - We see that the model predicted `0.2136` for the first bounding box `j=0`.
+                        - We will compute the mean squared error between the ground truth confidence
+                        score and the predicted confidence score of the 1st predicted bounding box.
+                        - $0.5 \times (0.2136 - 0)^2 = 0.5 \times 0.04562496 = 0.02281248$
+                    - Loop over $j=1$
+                        - We still use `y_true[i, 4]` because the `y_true[i, 9]` is same as `y_true[i, 4]` by
+                        construction in {prf:ref}`yolo_gt_matrix`.  
+                        - `y_pred[i, 9]` is the confidence score of the 2nd bounding box in cell $i=0$.
+                        - We see that the model predicted `-0.1186` for the second bounding box `j=1`.
+                        - We will compute the mean squared error between the ground truth confidence score and
+                        the predicted confidence score of the 2nd predicted bounding box.
+                        - $0.5 \times (-0.1186 - 0)^2 = 0.5 \times 0.01406596 = 0.00703298$
+                - Finally we have $0.02281248 + 0.00703298 = 0.02984546$ for the no object loss in cell $i=0$.
+                - At this point the total loss for grid cell `i=0` is done:
+                    - `self.bbox_xy_offset_loss = 0`
+                    - `self.bbox_wh_loss = 0`
+                    - `self.object_conf_loss=0`
+                    - `self.no_object_conf_loss=0.02984546`
+                    - `self.class_loss=0`
+            - when `i=30`:
+                - `y_true_i = [0.4093, 0.2770, 0.4164, 0.2620, 1,
+                               0.4093, 0.2770, 0.4164, 0.2620, 1,
+                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]`
+
+                - `y_pred_i = [-0.4827, -0.3511, -0.5949, 0.0183, 0.1622,
+                               2.6878,  2.0020, -1.1686, -4.5915, 0.7578,
+                               -0.2317,  0.5274, -0.2556, -0.2830,  0.3817, -0.1655, -0.0712, -0.1746,  0.1467,  0.0166, -0.4146,  1.1629, -0.0429, -0.0952, 0.1323, -0.1055,  0.2692,  0.0923, -0.0845,  0.5842]`
+
+                - `indicator_obj_i` corresponds to $\obji$ in the equation above and is equal to $1$ since there is an object in cell $i=30$.
+
+                - So equations a, b, c and e goes into the `if` clause and equation d goes into the `else` clause.
+                - Some variables below:
+
+                ```python
+                b_gt: [0.4093485  0.27699995 0.4164306  0.262     ]
+                b_pred_1: [-0.48271456 -0.3510531  -0.5948943   0.01832254]
+                b_pred_2: [ 2.6877854  2.0019963 -1.1685951 -4.591512 ]
+                x_i, y_i, w_i, h_i = 0.4093485, 0.27699995, 0.4164306, 0.262
+                xhat_i1, yhat_i1, what_i1, hhat_i1 = -0.48271456, -0.3510531, -0.5948943, 0.01832254
+                xhat_i2, yhat_i2, what_i2, hhat_i2 = 2.6877854, 2.0019963, -1.1685951, -4.591512
+                conf_1, confhat_i1, confhat_i2 = 1, 0.1622, 0.7578
+                ```
+                
+                - Then in `line x-x`, we compute `iou_b1` and `iou_b2` which are the intersection over union between the ground truth bounding box and the predicted bounding boxes. This is 
+                for the Bipartite matching part when we choose which predictor $\jmax$
+                to use to compute the loss with the ground truth.
+
+                - In `line x-x`, we do a simple inequality check (note this is not scalable if you have
+                more than 2 bounding box predictors per grid cell) to see which bounding box predictor
+                has the highest intersection over union with the ground truth bounding box. In this case
+                it is the 2nd bounding box predictor `j=1` since `iou_b2 > iou_b1`.
+
+                So:
+
+                ```python
+                xhat_i_jmax, yhat_i_jmax, what_i_jmax, hhat_i_jmax = xhat_i2, yhat_i2, what_i2, hhat_i2
+                ```
+
+                - `self.bbox_xy_offset_loss`:
+                    - `x_offset_loss` -> $(0.4093484878540039 - 2.6877853870391846)^2 = 5.19127470357$
+                    - `y_offset_loss` -> $(0.27699995040893555 - 2.0019962787628174)^2 = 2.97561233283$
+                    - `self.bbox_xy_offset_loss` -> $5 \times (5.19127470357 + 2.97561233283) = 5 \times 8.1668870364 = 40.8344$
+  
+                - `self.bbox_wh_loss`:
+                    - `w_loss` -> $(\sqrt{0.41643059253692627} - \sqrt{\abs{-1.1685951}})^2 = 0.1898357414137847$
+                    - `h_loss` -> $(\sqrt{0.262} - \sqrt{\abs{-4.591512}})^2 = 2.659906617074438$
+                    - `self.bbox_wh_loss` -> $5 \times (0.1898357414137847 + 2.659906617074438) = 14.2487$
+
+                - `self.object_conf_loss`:
+                    - `self.object_conf_loss` -> $(1 - 0.7578)^2 = 0.05864378437399864$
+
+                - `self.no_object_conf_loss`:
+                    - `self.no_object_conf_loss` -> $0$
+                    - Note that in my code we have `self.no_object_conf_loss += self.lambda_noobj * self.compute_no_object_conf_loss(conf_i=torch.tensor(0., device="cuda"), confhat_i=confhat_i_complement)` which also computes the no object loss
+                    for the other bounding box predictor in the cell. But we won't calculate it here.
+                    The reason some people do that is they want to penalize the network for predicting
+                    something for the other bounding box predictor even though there is an object in that grid cell. In other words, they want it to specialize for predictor $\jmax$.
+                
+                - `self.class_loss`:
+                    - This part is simple, we just compute the mean squared error between the ground truth class and the predicted class for each element.
 
 ## References
 
