@@ -1,3 +1,4 @@
+
 from dataclasses import dataclass
 from pydoc import resolve
 from typing import Any
@@ -29,3 +30,4 @@ if __name__ == "__main__":
     # dataloader_config = OmegaConf.load("./configs/dataloaders/mnist_dataloaders.yaml")
     # print(dataloader_config)
     train()  # unique run in outputs folder
+

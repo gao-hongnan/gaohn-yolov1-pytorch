@@ -1024,8 +1024,9 @@ first batch of the train loader, as illustrated in {numref}`first_batch`.
 
 ```{code-cell} ipython3
 # load directly the first batch of the train loader
-y_trues = torch.load("./assets/y_trues.pt")
-y_preds = torch.load("./assets/y_preds.pt")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+y_trues = torch.load("./assets/y_trues.pt", map_location=device)
+y_preds = torch.load("./assets/y_preds.pt", map_location=device)
 print(f"y_trues.shape: {y_trues.shape}")
 print(f"y_preds.shape: {y_preds.shape}")
 ```
