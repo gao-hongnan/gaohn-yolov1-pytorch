@@ -10,4 +10,3 @@ by Hongnan Gao
   <a href="https://gao-hongnan.github.io/gaohn-mlops-docs/mlops_docs/developing/general_workflow/#documentation">Documentation</a>
   <span> • </span>
   <a href="https://madewithml.com/courses/mlops/documentation/">Made With ML</a>
-</h4>

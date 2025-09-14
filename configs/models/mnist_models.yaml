@@ -1,0 +1,3 @@
+model_params:
+  __target__: torchvision.models.alexnet
+  pretrained: True
