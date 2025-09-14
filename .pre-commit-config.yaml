@@ -1,0 +1,15 @@
+repos:
+- repo: local
+  hooks:
+    - id: linter
+      name: Run linter
+      entry: bash
+      args: ["./scripts/linter.sh"]
+      language: system
+      pass_filenames: false
+    - id: check_format
+      name: Run black code formatter
+      entry: bash 
+      args: ["./scripts/formatter.sh"]
+      language: system
+      pass_filenames: false

@@ -1,0 +1,28 @@
+# docs
+ghp-import
+# mkdocs
+markdown-exec==0.7.2
+mkdocs==1.3.0
+mkdocs-material==8.2.13
+mkdocs-material-extensions==1.0.3
+mkdocstrings==0.18.1
+nbconvert==6.3.0
+# jupyter-book
+jupyter-book==0.13.1
+sphinx-inline-tabs==2021.3.28b7
+sphinx-proof==0.1.3
+# myst-nb==0.16.0 # remember to download manually
+
+# linters, pytest, type checking
+bandit == 1.7.0
+black == 21.9b0
+click == 7.1.2
+coverage == 5.5
+mypy == 0.910
+pre-commit==2.20.0
+pylint == 2.15.3
+pytest == 6.2.3
+types-PyYAML == 5.4.3
+types-requests == 2.25.0
+types-setuptools == 57.4.2
+types-six == 0.1.7

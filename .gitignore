@@ -3,7 +3,7 @@ site/
 \#*\#
 venv_*/
 **/.ipynb_checkpoints/
-
+datasets/
 # Converted Markdown Files
 # docs/*/**/*.md
 
